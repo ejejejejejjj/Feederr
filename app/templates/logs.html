@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <h1>Logs del Sistema</h1>
+    <p>Registro de actividad de Feederr</p>
+</div>
+
+<div class="card">
+    <div class="card-actions">
+        <button class="btn btn-primary" onclick="refreshLogs()"><i class="fas fa-sync-alt"></i> Actualizar</button>
+        <button class="btn btn-secondary" onclick="clearLogs()"><i class="fas fa-trash"></i> Limpiar</button>
+        <label>
+            <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
+            Auto-refresh (5s)
+        </label>
+    </div>
+    
+    <div class="log-controls">
+        <select id="logLevel" class="form-input" onchange="filterLogs()">
+            <option value="">Todos los niveles</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+        </select>
+        
+        <input type="text" id="logFilter" class="form-input" placeholder="Filtrar por texto..." oninput="filterLogs()">
+        
+        <select id="logLines" class="form-input" onchange="refreshLogs()">
+            <option value="50">Últimas 50 líneas</option>
+            <option value="100" selected>Últimas 100 líneas</option>
+            <option value="200">Últimas 200 líneas</option>
+            <option value="500">Últimas 500 líneas</option>
+        </select>
+    </div>
+    
+    <div id="logContainer">
+        <pre id="logContent"></pre>
+    </div>
+</div>
+
+<style>
+    .card-actions {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+    }
+    
+    .log-controls {
+        display: grid;
+        grid-template-columns: 200px 1fr 200px;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    #logContainer {
+        background: var(--bg-input);
+        border-radius: 8px;
+        padding: 1rem;
+        max-height: 600px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+    }
+    
+    #logContent {
+        margin: 0;
+        font-size: 0.875rem;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    
+    .log-line {
+        margin: 0.25rem 0;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+    }
+    
+    .log-DEBUG { color: #6c757d; }
+    .log-INFO { color: #17a2b8; }
+    .log-WARNING { color: #ffc107; }
+    .log-ERROR { color: #dc3545; background: rgba(220, 53, 69, 0.1); }
+    
+    .log-line.hidden {
+        display: none;
+    }
+</style>
+
+<script>
+    let autoRefreshInterval = null;
+    let allLogs = [];
+    
+    async function refreshLogs() {
+        const lines = document.getElementById('logLines').value;
+        
+        try {
+            const response = await fetch(`/api/logs?lines=${lines}`);
+            const data = await response.json();
+            
+            allLogs = data.logs || [];
+            displayLogs();
+            
+        } catch (error) {
+            document.getElementById('logContent').textContent = 'Error al cargar logs: ' + error;
+        }
+    }
+    
+    function displayLogs() {
+        const container = document.getElementById('logContent');
+        
+        if (allLogs.length === 0) {
+            container.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 2rem;">No hay logs disponibles</div>';
+            return;
+        }
+        
+        let html = '';
+        allLogs.forEach((log, index) => {
+            const level = detectLogLevel(log);
+            html += `<div class="log-line log-${level}" data-index="${index}">${escapeHtml(log)}</div>`;
+        });
+        
+        container.innerHTML = html;
+        filterLogs();
+        
+        // Scroll to bottom
+        const logContainer = document.getElementById('logContainer');
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    function detectLogLevel(logLine) {
+        if (logLine.includes('DEBUG')) return 'DEBUG';
+        if (logLine.includes('INFO')) return 'INFO';
+        if (logLine.includes('WARNING') || logLine.includes('WARN')) return 'WARNING';
+        if (logLine.includes('ERROR')) return 'ERROR';
+        return 'INFO';
+    }
+    
+    function filterLogs() {
+        const levelFilter = document.getElementById('logLevel').value;
+        const textFilter = document.getElementById('logFilter').value.toLowerCase();
+        const logLines = document.querySelectorAll('.log-line');
+        
+        logLines.forEach(line => {
+            const text = line.textContent.toLowerCase();
+            const level = detectLogLevel(line.textContent);
+            
+            const levelMatch = !levelFilter || level === levelFilter;
+            const textMatch = !textFilter || text.includes(textFilter);
+            
+            line.classList.toggle('hidden', !(levelMatch && textMatch));
+        });
+    }
+    
+    function toggleAutoRefresh() {
+        const enabled = document.getElementById('autoRefresh').checked;
+        
+        if (enabled) {
+            refreshLogs();
+            autoRefreshInterval = setInterval(refreshLogs, 5000);
+        } else {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+    }
+    
+    async function clearLogs() {
+        if (!confirm('¿Estás seguro de que quieres limpiar todos los logs?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/logs', { method: 'DELETE' });
+            
+            if (response.ok) {
+                allLogs = [];
+                displayLogs();
+            } else {
+                alert('Error al limpiar logs');
+            }
+        } catch (error) {
+            alert('Error al limpiar logs: ' + error);
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Load logs on page load
+    refreshLogs();
+</script>
+{% endblock %}

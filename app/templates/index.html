@@ -1,0 +1,789 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1>Dashboard</h1>
+            <p>Gestiona tus indexers Unit3D</p>
+        </div>
+        <button class="btn btn-primary" onclick="openAddIndexerModal()" style="height: fit-content;">
+            <i class="fas fa-plus"></i> Agregar Indexer
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-title">Indexers Configurados</div>
+    
+    {% if indexers %}
+    <div class="indexer-grid">
+        {% for indexer in indexers %}
+        <div class="indexer-card">
+            <div class="indexer-header">
+                <h3>{{ indexer.name }}</h3>
+                <span class="badge badge-{% if indexer.authenticated %}success{% else %}danger{% endif %}">
+                    {% if indexer.authenticated %}✓ Autenticado{% else %}✗ No autenticado{% endif %}
+                </span>
+            </div>
+            
+            <div class="indexer-info">
+                <div><strong>URL:</strong> <code>{{ indexer.url }}</code></div>
+                {% if indexer.last_check %}
+                <div><strong>Última verificación:</strong> {{ indexer.last_check }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="indexer-actions">
+                <button class="btn btn-primary btn-sm" onclick="openConfigModal('{{ indexer.id }}', '{{ indexer.name }}')">
+                    <i class="fas fa-cog"></i> Configurar
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="refreshSession('{{ indexer.id }}')">
+                    <i class="fas fa-sync-alt"></i> Renovar sesión
+                </button>
+            </div>
+            
+            <div class="torznab-url">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <strong>URL Torznab:</strong>
+                    <button class="btn btn-secondary btn-sm" id="copyBtn-{{ indexer.id }}" onclick="copyTorznabUrl('{{ indexer.id }}')"><i class="fas fa-clipboard"></i> Copiar</button>
+                </div>
+                <code id="torznab-{{ indexer.id }}">http://feederr:9797/api/v1/torznab/{{ indexer.id }}</code>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">No hay indexers configurados.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-title">API Key</div>
+    <div class="api-key-container">
+        <code id="apiKey">{{ api_key }}</code>
+        <button class="btn btn-secondary btn-sm" id="copyApiKeyBtn" onclick="copyApiKey()"><i class="fas fa-clipboard"></i> Copiar</button>
+        <button class="btn btn-warning btn-sm" onclick="regenerateApiKey()"><i class="fas fa-sync-alt"></i> Regenerar</button>
+    </div>
+</div>
+
+<!-- Modal de configuración -->
+<div id="configModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title" id="modalTitle">Configurar Indexer</h2>
+            <button class="close" onclick="closeConfigModal()">&times;</button>
+        </div>
+        
+        <form id="configForm">
+            <input type="hidden" id="indexerId" name="indexer_id">
+            
+            <div class="form-group">
+                <label class="form-label">Usuario (opcional)</label>
+                <input type="text" class="form-input" id="username" name="username" placeholder="Dejar vacío para mantener actual">
+                <small style="color: var(--text-secondary); display: block; margin-top: 0.25rem;">
+                    Solo se validarán las credenciales si cambias usuario o contraseña
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Contraseña (opcional)</label>
+                <input type="password" class="form-input" id="password" name="password" placeholder="Dejar vacío para mantener actual">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="enabled" name="enabled" checked>
+                    <strong>Indexer habilitado</strong>
+                </label>
+                <small style="color: var(--text-secondary); display: block; margin-left: 1.5rem; margin-top: 0.25rem;">
+                    Si está deshabilitado, no se comunicará con el tracker pero seguirá visible en los *arr
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="autoThanks" name="auto_thanks" checked>
+                    Dar "gracias" automáticamente al descargar
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label"><i class="fas fa-user-secret"></i> User-Agent</label>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; margin-left: 1.5rem;">
+                        <input type="radio" name="user_agent_mode" value="random" checked onchange="toggleUserAgentFields()">
+                        <i class="fas fa-random"></i> Aleatorio (recomendado)
+                    </label>
+                    <label style="display: block; margin-bottom: 0.5rem; margin-left: 1.5rem;">
+                        <input type="radio" name="user_agent_mode" value="list" onchange="toggleUserAgentFields()">
+                        <i class="fas fa-list"></i> Seleccionar de la lista
+                    </label>
+                    <label style="display: block; margin-left: 1.5rem;">
+                        <input type="radio" name="user_agent_mode" value="custom" onchange="toggleUserAgentFields()">
+                        <i class="fas fa-edit"></i> Personalizado
+                    </label>
+                </div>
+                
+                <div id="userAgentListContainer" style="display: none; margin-top: 0.5rem;">
+                    <select class="form-input" id="userAgentList" name="user_agent_list_index">
+                        <option value="0">Chrome 120 - Windows 10</option>
+                        <option value="1">Chrome 119 - Windows 10</option>
+                        <option value="2">Chrome 120 - macOS</option>
+                        <option value="3">Firefox 121 - Windows 10</option>
+                        <option value="4">Safari 17.2 - macOS</option>
+                    </select>
+                </div>
+                
+                <div id="userAgentCustomContainer" style="display: none; margin-top: 0.5rem;">
+                    <input type="text" class="form-input" id="userAgentCustom" name="user_agent_custom_value" 
+                           placeholder="Mozilla/5.0 (Windows NT 10.0; Win64; x64)..." 
+                           onblur="validateUserAgent()">
+                    <small id="userAgentError" style="color: var(--error); display: none; margin-top: 0.25rem;">
+                        <i class="fas fa-exclamation-triangle"></i> User-Agent inválido. Debe contener Mozilla, un navegador (Chrome/Firefox/Safari/Edge) y una plataforma (Windows/Linux/Mac/Android).
+                    </small>
+                    <small id="userAgentSuccess" style="color: var(--success); display: none; margin-top: 0.25rem;">
+                        <i class="fas fa-check-circle"></i> User-Agent válido
+                    </small>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="timeRestrictionsEnabled" name="time_restrictions_enabled" onchange="toggleTimeFields()">
+                    <strong>Horario de funcionamiento</strong>
+                </label>
+                <small style="color: var(--text-secondary); display: block; margin-left: 1.5rem; margin-top: 0.25rem;">
+                    Limita las búsquedas a un horario específico. Si está desactivado, funcionará 24/7
+                </small>
+                <div id="timeFieldsContainer" style="display: flex; gap: 1rem; margin-top: 0.75rem; align-items: center;">
+                    <input type="time" class="form-input" id="startTime" name="start_time" value="10:00" disabled>
+                    <span>a</span>
+                    <input type="time" class="form-input" id="endTime" name="end_time" value="23:59" disabled>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: space-between;">
+                <button type="button" class="btn btn-danger" onclick="deleteIndexer()" id="deleteIndexerBtn">
+                    <i class="fas fa-trash"></i> Eliminar Indexer
+                </button>
+                <div style="display: flex; gap: 1rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeConfigModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="saveConfigBtn">Guardar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal para agregar indexer -->
+<div id="addIndexerModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">Agregar Indexer</h2>
+            <button class="close" onclick="closeAddIndexerModal()">&times;</button>
+        </div>
+        
+        <form id="addIndexerForm">
+            <div class="form-group">
+                <label class="form-label">Tipo de Indexer</label>
+                <select class="form-input" id="indexerType" name="indexer_type" required onchange="showAddIndexerFields()">
+                    <option value="">Selecciona un tipo...</option>
+                    <option value="torrentland">Torrentland (Playwright)</option>
+                    <option value="xbytesv2">xBytesV2 (API)</option>
+                </select>
+                <small style="color: var(--text-secondary); display: block; margin-top: 0.25rem;">
+                    Torrentland usa Playwright (navegador). xBytesV2 usa API HTTP directa.
+                </small>
+            </div>
+            
+            <div id="addIndexerFields" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label">URL del tracker</label>
+                    <input type="url" class="form-input" id="newUrl" name="url" placeholder="https://ejemplo.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Usuario</label>
+                    <input type="text" class="form-input" id="newUsername" name="username" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Contraseña</label>
+                    <input type="password" class="form-input" id="newPassword" name="password" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="newEnabled" name="enabled" checked>
+                        <strong>Indexer habilitado</strong>
+                    </label>
+                    <small style="color: var(--text-secondary); display: block; margin-left: 1.5rem; margin-top: 0.25rem;">
+                        Si está deshabilitado, no se comunicará con el tracker pero seguirá visible en los *arr
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="newAutoThanks" name="auto_thanks" checked>
+                        Dar "gracias" automáticamente al descargar
+                    </label>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="newTimeRestrictionsEnabled" name="time_restrictions_enabled" onchange="toggleNewTimeFields()">
+                        <strong>Horario de funcionamiento</strong>
+                    </label>
+                    <small style="color: var(--text-secondary); display: block; margin-left: 1.5rem; margin-top: 0.25rem;">
+                        Limita las búsquedas a un horario específico. Si está desactivado, funcionará 24/7
+                    </small>
+                    <div id="newTimeFieldsContainer" style="display: flex; gap: 1rem; margin-top: 0.75rem; align-items: center;">
+                        <input type="time" class="form-input" id="newStartTime" name="start_time" value="10:00" disabled>
+                        <span>a</span>
+                        <input type="time" class="form-input" id="newEndTime" name="end_time" value="23:59" disabled>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeAddIndexerModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="addIndexerBtn">Crear Indexer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .indexer-grid {
+        display: grid;
+        gap: 1.5rem;
+    }
+    
+    .indexer-card {
+        background: var(--bg-input);
+        padding: 1.5rem;
+        border-radius: 8px;
+    }
+    
+    .indexer-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    
+    .indexer-info {
+        margin: 1rem 0;
+        font-size: 0.875rem;
+    }
+    
+    .indexer-info > div {
+        margin: 0.5rem 0;
+    }
+    
+    .indexer-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin: 1rem 0;
+    }
+    
+    .torznab-url {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+        font-size: 0.875rem;
+    }
+    
+    .torznab-url code {
+        display: block;
+        margin-top: 0.5rem;
+        word-break: break-all;
+    }
+    
+    .api-key-container {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+    
+    .api-key-container code {
+        flex: 1;
+        padding: 0.75rem;
+    }
+    
+    .empty-state {
+        text-align: center;
+        color: var(--text-secondary);
+        padding: 2rem;
+    }
+</style>
+
+<script>
+    async function openConfigModal(indexerId, indexerName) {
+        document.getElementById('configModal').classList.add('show');
+        document.getElementById('modalTitle').textContent = `Configurar ${indexerName}`;
+        document.getElementById('indexerId').value = indexerId;
+        
+        // Load existing config
+        try {
+            const response = await fetch(`/api/indexers/${indexerId}/config`);
+            const data = await response.json();
+            
+            if (data.success && data.config) {
+                const config = data.config;
+                
+                // Enabled checkbox
+                document.getElementById('enabled').checked = config.enabled !== false;
+                
+                // Auto thanks checkbox
+                document.getElementById('autoThanks').checked = config.auto_thanks !== false;
+                
+                // Time restrictions
+                const timeEnabled = config.time_restrictions_enabled === true;
+                document.getElementById('timeRestrictionsEnabled').checked = timeEnabled;
+                
+                if (config.start_time) {
+                    document.getElementById('startTime').value = config.start_time;
+                }
+                if (config.end_time) {
+                    document.getElementById('endTime').value = config.end_time;
+                }
+                
+                // Toggle time fields based on checkbox state
+                toggleTimeFields();
+                
+                // User agent configuration
+                if (config.user_agent_mode) {
+                    const mode = config.user_agent_mode || 'random';
+                    document.querySelector(`input[name="user_agent_mode"][value="${mode}"]`).checked = true;
+                    
+                    if (mode === 'list' && config.user_agent_list_index !== undefined) {
+                        document.getElementById('userAgentList').value = config.user_agent_list_index;
+                    }
+                    
+                    if (mode === 'custom' && config.user_agent_custom_value) {
+                        document.getElementById('userAgentCustom').value = config.user_agent_custom_value;
+                    }
+                    
+                    toggleUserAgentFields();
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load config:', error);
+        }
+    }
+    
+    function toggleTimeFields() {
+        const enabled = document.getElementById('timeRestrictionsEnabled').checked;
+        const startTime = document.getElementById('startTime');
+        const endTime = document.getElementById('endTime');
+        
+        startTime.disabled = !enabled;
+        endTime.disabled = !enabled;
+        
+        // Visual feedback
+        if (enabled) {
+            startTime.style.opacity = '1';
+            endTime.style.opacity = '1';
+        } else {
+            startTime.style.opacity = '0.5';
+            endTime.style.opacity = '0.5';
+        }
+    }
+    
+    function toggleUserAgentFields() {
+        const mode = document.querySelector('input[name="user_agent_mode"]:checked').value;
+        const listContainer = document.getElementById('userAgentListContainer');
+        const customContainer = document.getElementById('userAgentCustomContainer');
+        
+        listContainer.style.display = mode === 'list' ? 'block' : 'none';
+        customContainer.style.display = mode === 'custom' ? 'block' : 'none';
+        
+        // Clear validation messages when switching modes
+        if (mode !== 'custom') {
+            document.getElementById('userAgentError').style.display = 'none';
+            document.getElementById('userAgentSuccess').style.display = 'none';
+        }
+    }
+    
+    function validateUserAgent() {
+        const input = document.getElementById('userAgentCustom');
+        const errorMsg = document.getElementById('userAgentError');
+        const successMsg = document.getElementById('userAgentSuccess');
+        const value = input.value.trim();
+        
+        if (!value) {
+            errorMsg.style.display = 'none';
+            successMsg.style.display = 'none';
+            return true;
+        }
+        
+        // Validation criteria
+        const hasMinLength = value.length >= 50 && value.length <= 300;
+        const hasMozilla = value.includes('Mozilla');
+        const hasBrowser = /Chrome|Firefox|Safari|Edge|Gecko|AppleWebKit/i.test(value);
+        const hasPlatform = /Windows|Linux|Mac|Android|X11/i.test(value);
+        const noForbidden = !/[<>]|script|\n|\r|\0/i.test(value);
+        
+        const isValid = hasMinLength && hasMozilla && hasBrowser && hasPlatform && noForbidden;
+        
+        if (isValid) {
+            errorMsg.style.display = 'none';
+            successMsg.style.display = 'block';
+            return true;
+        } else {
+            errorMsg.style.display = 'block';
+            successMsg.style.display = 'none';
+            return false;
+        }
+    }
+    
+    function closeConfigModal() {
+        document.getElementById('configModal').classList.remove('show');
+    }
+    
+    document.getElementById('configForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        // Validate custom user agent if selected
+        const uaMode = document.querySelector('input[name="user_agent_mode"]:checked').value;
+        if (uaMode === 'custom') {
+            if (!validateUserAgent()) {
+                const submitBtn = document.getElementById('saveConfigBtn');
+                showButtonFeedback(submitBtn, false, 'User-Agent inválido');
+                return;
+            }
+        }
+        
+        const formData = new FormData(e.target);
+        const data = {};
+        
+        // Process form data
+        for (const [key, value] of formData.entries()) {
+            if (key === 'enabled' || key === 'auto_thanks' || key === 'time_restrictions_enabled') {
+                data[key] = true;
+            } else {
+                data[key] = value;
+            }
+        }
+        
+        // Handle unchecked checkboxes
+        if (!formData.has('enabled')) data['enabled'] = false;
+        if (!formData.has('auto_thanks')) data['auto_thanks'] = false;
+        if (!formData.has('time_restrictions_enabled')) data['time_restrictions_enabled'] = false;
+        
+        const submitBtn = document.getElementById('saveConfigBtn');
+        const originalBtnText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        
+        // Check if credentials changed
+        const hasCredentials = data.username || data.password;
+        if (hasCredentials) {
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validando...';
+        } else {
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+        }
+        
+        try {
+            const response = await fetch(`/api/indexers/${data.indexer_id}/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showButtonFeedback(submitBtn, true, 'Guardado');
+            } else {
+                if (response.status === 401) {
+                    showButtonFeedback(submitBtn, false, 'Credenciales inválidas');
+                } else {
+                    showButtonFeedback(submitBtn, false, 'Error');
+                }
+            }
+        } catch (error) {
+            showButtonFeedback(submitBtn, false, 'Error');
+        }
+    });
+    
+    async function refreshSession(indexerId) {
+        const btn = event.target.closest('button');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Renovando...';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch(`/api/indexers/${indexerId}/refresh-session`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                btn.innerHTML = '<i class="fas fa-check"></i> Renovada';
+                btn.style.backgroundColor = '#10b981';
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                btn.innerHTML = '<i class="fas fa-times"></i> Error';
+                btn.style.backgroundColor = '#ef4444';
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.style.backgroundColor = '';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        } catch (error) {
+            btn.innerHTML = '<i class="fas fa-times"></i> Error';
+            btn.style.backgroundColor = '#ef4444';
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.style.backgroundColor = '';
+                btn.disabled = false;
+            }, 2000);
+        }
+    }
+    
+    function copyApiKey() {
+        const apiKey = document.getElementById('apiKey').textContent;
+        const btn = document.getElementById('copyApiKeyBtn');
+        const originalContent = btn.innerHTML;
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(apiKey).then(() => {
+                showCopiedFeedback(btn, originalContent);
+            }).catch(err => {
+                fallbackCopy(apiKey, btn, originalContent);
+            });
+        } else {
+            fallbackCopy(apiKey, btn, originalContent);
+        }
+    }
+    
+    function copyTorznabUrl(indexerId) {
+        const url = document.getElementById(`torznab-${indexerId}`).textContent;
+        const btn = document.getElementById(`copyBtn-${indexerId}`);
+        const originalContent = btn.innerHTML;
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(() => {
+                showCopiedFeedback(btn, originalContent);
+            }).catch(err => {
+                fallbackCopy(url, btn, originalContent);
+            });
+        } else {
+            fallbackCopy(url, btn, originalContent);
+        }
+    }
+    
+    function showCopiedFeedback(btn, originalContent) {
+        btn.innerHTML = '<i class="fas fa-check"></i> Copiado';
+        btn.style.backgroundColor = '#10b981';
+        setTimeout(() => {
+            btn.innerHTML = originalContent;
+            btn.style.backgroundColor = '';
+        }, 2000);
+    }
+    
+    function fallbackCopy(text, btn, originalContent) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showCopiedFeedback(btn, originalContent);
+        } catch (err) {
+            btn.innerHTML = '<i class="fas fa-times"></i> Error';
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+            }, 2000);
+        }
+        document.body.removeChild(textarea);
+    }
+    
+    async function regenerateApiKey() {
+        if (!confirm('¿Estás seguro? Tendrás que actualizar la API key en Prowlarr.')) {
+            return;
+        }
+        
+        const btn = event.target.closest('button');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch('/api/regenerate-key', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('apiKey').textContent = data.api_key;
+                btn.innerHTML = '<i class="fas fa-check"></i> Regenerada';
+                btn.style.backgroundColor = '#10b981';
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.style.backgroundColor = '';
+                    btn.disabled = false;
+                }, 2000);
+            } else {
+                btn.innerHTML = '<i class="fas fa-times"></i> Error';
+                btn.style.backgroundColor = '#ef4444';
+                setTimeout(() => {
+                    btn.innerHTML = originalHTML;
+                    btn.style.backgroundColor = '';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        } catch (error) {
+            btn.innerHTML = '<i class="fas fa-times"></i> Error';
+            btn.style.backgroundColor = '#ef4444';
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.style.backgroundColor = '';
+                btn.disabled = false;
+            }, 2000);
+        }
+    }
+    
+    // Funciones para modal de agregar indexer
+    function openAddIndexerModal() {
+        document.getElementById('addIndexerModal').classList.add('show');
+        document.getElementById('addIndexerForm').reset();
+        document.getElementById('addIndexerFields').style.display = 'none';
+        toggleNewTimeFields();
+    }
+    
+    function closeAddIndexerModal() {
+        document.getElementById('addIndexerModal').classList.remove('show');
+    }
+    
+    function toggleNewTimeFields() {
+        const enabled = document.getElementById('newTimeRestrictionsEnabled').checked;
+        const startTime = document.getElementById('newStartTime');
+        const endTime = document.getElementById('newEndTime');
+        
+        startTime.disabled = !enabled;
+        endTime.disabled = !enabled;
+        
+        if (enabled) {
+            startTime.style.opacity = '1';
+            endTime.style.opacity = '1';
+        } else {
+            startTime.style.opacity = '0.5';
+            endTime.style.opacity = '0.5';
+        }
+    }
+    
+    function showButtonFeedback(btn, success, message = '') {
+        const originalHTML = btn.innerHTML;
+        const originalBg = btn.style.backgroundColor;
+        
+        if (success) {
+            btn.innerHTML = '<i class="fas fa-check"></i> ' + (message || 'Éxito');
+            btn.style.backgroundColor = '#10b981';
+        } else {
+            btn.innerHTML = '<i class="fas fa-times"></i> ' + (message || 'Error');
+            btn.style.backgroundColor = '#ef4444';
+        }
+        
+        btn.disabled = true;
+        
+        setTimeout(() => {
+            if (success) {
+                location.reload();
+            } else {
+                btn.innerHTML = originalHTML;
+                btn.style.backgroundColor = originalBg;
+                btn.disabled = false;
+            }
+        }, 2000);
+    }
+    
+    async function deleteIndexer() {
+        const indexerId = document.getElementById('indexerId').value;
+        
+        if (!confirm(`¿Estás seguro de que quieres eliminar este indexer? Esta acción no se puede deshacer.`)) {
+            return;
+        }
+        
+        const btn = document.getElementById('deleteIndexerBtn');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Eliminando...';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch(`/api/indexers/${indexerId}`, {
+                method: 'DELETE'
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                showButtonFeedback(btn, true, 'Eliminado');
+            } else {
+                showButtonFeedback(btn, false, 'Error');
+            }
+        } catch (error) {
+            showButtonFeedback(btn, false, 'Error');
+        }
+    }
+    
+    function showAddIndexerFields() {
+        const type = document.getElementById('indexerType').value;
+        const fieldsContainer = document.getElementById('addIndexerFields');
+        
+        if (type) {
+            fieldsContainer.style.display = 'block';
+        } else {
+            fieldsContainer.style.display = 'none';
+        }
+    }
+    
+    document.getElementById('addIndexerForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const data = {
+            indexer_type: formData.get('indexer_type'),
+            url: formData.get('url'),
+            username: formData.get('username'),
+            password: formData.get('password'),
+            enabled: formData.has('enabled'),
+            auto_thanks: formData.has('auto_thanks'),
+            time_restrictions_enabled: formData.has('time_restrictions_enabled'),
+            start_time: formData.get('start_time'),
+            end_time: formData.get('end_time')
+        };
+        
+        const submitBtn = document.getElementById('addIndexerBtn');
+        const originalBtnText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validando...';
+        
+        try {
+            const response = await fetch('/api/indexers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                showButtonFeedback(submitBtn, true, 'Creado');
+            } else {
+                if (response.status === 401) {
+                    showButtonFeedback(submitBtn, false, 'Credenciales inválidas');
+                } else {
+                    showButtonFeedback(submitBtn, false, 'Error');
+                }
+            }
+        } catch (error) {
+            showButtonFeedback(submitBtn, false, 'Error');
+        }
+    });
+
+</script>
+{% endblock %}

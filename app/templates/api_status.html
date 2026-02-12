@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h1>API Status</h1>
+        <p>Estado actual del sistema</p>
+    </div>
+    <a href="/home/api-docs" class="btn btn-primary" style="text-decoration: none;">
+        <i class="fas fa-book"></i> API Documentation
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-title">Estado del Servicio</div>
+    <div id="statusContent">
+        <p style="text-align: center; color: var(--text-secondary); padding: 2rem;"><i class="fas fa-hourglass-half"></i> Cargando estado...</p>
+    </div>
+</div>
+
+<style>
+    .status-grid {
+        display: grid;
+        gap: 1rem;
+    }
+    
+    .status-item {
+        background: var(--bg-input);
+        padding: 1rem;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .status-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+    
+    .status-value {
+        font-family: 'Courier New', monospace;
+        color: var(--text-primary);
+    }
+    
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+    
+    .status-badge.success {
+        background: var(--success);
+        color: white;
+    }
+    
+    .status-badge.error {
+        background: var(--danger);
+        color: white;
+    }
+</style>
+
+<script>
+    async function loadStatus() {
+        try {
+            const response = await fetch('/api/status');
+            const data = await response.json();
+            
+            let html = '<div class="status-grid">';
+            
+            // General info
+            html += `
+                <div class="status-item">
+                    <span class="status-label">Nombre de la aplicación</span>
+                    <span class="status-value">${data.name || 'N/A'}</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Versión</span>
+                    <span class="status-value">${data.version || 'N/A'}</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Estado</span>
+                    <span class="status-badge success">${data.status || 'N/A'}</span>
+                </div>
+            `;
+            
+            // Indexers
+            if (data.indexers) {
+                html += '<div class="status-item" style="grid-column: 1 / -1; background: var(--bg-dark); padding: 0.75rem; margin-top: 1rem;"><strong>Indexers Habilitados</strong></div>';
+                
+                for (const [name, enabled] of Object.entries(data.indexers)) {
+                    html += `
+                        <div class="status-item">
+                            <span class="status-label">${name.charAt(0).toUpperCase() + name.slice(1)}</span>
+                            <span class="status-badge ${enabled ? 'success' : 'error'}">
+                                ${enabled ? '✓ Habilitado' : '✗ Deshabilitado'}
+                            </span>
+                        </div>
+                    `;
+                }
+            }
+            
+            html += '</div>';
+            
+            // JSON crudo
+            html += `
+                <details style="margin-top: 2rem;">
+                    <summary style="cursor: pointer; padding: 1rem; background: var(--bg-input); border-radius: 8px;">
+                        📄 Ver JSON crudo
+                    </summary>
+                    <pre style="background: #1a1d29; padding: 1rem; border-radius: 8px; margin-top: 1rem; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 0.875rem;">${JSON.stringify(data, null, 2)}</pre>
+                </details>
+            `;
+            
+            document.getElementById('statusContent').innerHTML = html;
+            
+        } catch (error) {
+            document.getElementById('statusContent').innerHTML = `
+                <div style="text-align: center; padding: 2rem;">
+                    <p style="color: var(--danger); margin-bottom: 1rem;">✗ Error al cargar el estado</p>
+                    <p style="color: var(--text-secondary); font-size: 0.875rem;">${error}</p>
+                </div>
+            `;
+        }
+    }
+    
+    // Load on page load
+    loadStatus();
+    
+    // Auto-refresh every 30 seconds
+    setInterval(loadStatus, 30000);
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Documentación
+*.md
+
+# Entorno y configuración
+.env
+
+# Datos y logs (se montan como volúmenes)
+data/
+logs/
+cookies/
+config/
+
+# Desarrollo
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+Dockerfile
+docker-compose.yml
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

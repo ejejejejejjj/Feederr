@@ -1,0 +1,18 @@
+services:
+  feederr:
+    container_name: feederr
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./cookies:/app/cookies
+      - ./config:/app/config
+    environment:
+      - TZ=Europe/Madrid
+      - LOG_LEVEL=INFO
+      - PORT=9797
+    env_file:
+      - .env

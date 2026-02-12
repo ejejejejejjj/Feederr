@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <h1>API Documentation</h1>
+    <p>Documentación interactiva de la API de Feederr</p>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+    <iframe 
+        id="swaggerFrame" 
+        src="/docs" 
+        style="width: 100%; height: calc(100vh - 200px); border: none; display: block;"
+        onload="applyDarkModeToSwagger()">
+    </iframe>
+</div>
+
+<style>
+    /* Override iframe content for dark mode */
+    #swaggerFrame {
+        background: var(--bg-dark);
+    }
+</style>
+
+<script>
+    function applyDarkModeToSwagger() {
+        try {
+            const iframe = document.getElementById('swaggerFrame');
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            
+            // Inject dark mode CSS
+            const style = iframeDoc.createElement('style');
+            style.textContent = `
+                body {
+                    background: #1a1d29 !important;
+                }
+                
+                .swagger-ui {
+                    filter: invert(0.88) hue-rotate(180deg);
+                }
+                
+                .swagger-ui .topbar {
+                    background: #252937 !important;
+                    border-bottom: 1px solid #374151 !important;
+                }
+                
+                .swagger-ui .info .title,
+                .swagger-ui .scheme-container {
+                    filter: invert(1) hue-rotate(180deg);
+                }
+                
+                .swagger-ui img {
+                    filter: invert(1) hue-rotate(180deg);
+                }
+                
+                .swagger-ui .topbar-wrapper img {
+                    filter: none !important;
+                }
+                
+                /* Fix syntax highlighting */
+                .swagger-ui .highlight-code {
+                    filter: invert(1) hue-rotate(180deg);
+                }
+                
+                /* Fix responses */
+                .swagger-ui .responses-inner {
+                    filter: invert(1) hue-rotate(180deg);
+                }
+            `;
+            
+            iframeDoc.head.appendChild(style);
+        } catch (e) {
+            console.log('Could not apply dark mode to iframe (same-origin policy)');
+        }
+    }
+</script>
+{% endblock %}

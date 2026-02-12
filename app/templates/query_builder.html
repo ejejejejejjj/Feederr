@@ -1,0 +1,639 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header">
+    <h1>Query Builder</h1>
+    <p>Prueba queries y visualiza resultados</p>
+</div>
+
+<div class="card">
+    <div class="card-title">Constructor de Consultas</div>
+    
+    <form id="queryForm" method="post" action="javascript:void(0);" onsubmit="return false;">
+        <div class="form-group">
+            <label class="form-label">Indexer</label>
+            <select class="form-input" id="indexer" name="indexer" required>
+                {% for indexer in indexers %}
+                <option value="{{ indexer.id }}">{{ indexer.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Tipo de búsqueda</label>
+            <select class="form-input" id="searchType" name="searchType">
+                <option value="search">Búsqueda general</option>
+                <option value="movie">Película</option>
+                <option value="tvsearch">Serie</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Query (texto)</label>
+            <input type="text" class="form-input" id="query" name="q" placeholder="Ejemplo: breaking bad">
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">TMDB ID</label>
+            <input type="text" class="form-input" id="tmdb" name="tmdbid" placeholder="175">
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">IMDB ID</label>
+            <input type="text" class="form-input" id="imdb" name="imdbid" placeholder="tt0405094">
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Categorías</label>
+            <input type="text" class="form-input" id="categories" name="cat" value="2000,5000" placeholder="2000,5000">
+        </div>
+        
+        <div id="tvFields" style="display: none;">
+            <div class="form-group">
+                <label class="form-label">Temporada</label>
+                <input type="number" class="form-input" id="season" name="season" placeholder="1">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Episodio</label>
+                <input type="number" class="form-input" id="episode" name="ep" placeholder="1">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Límite de resultados</label>
+            <input type="number" class="form-input" id="limit" name="limit" value="10" min="1" max="100">
+        </div>
+        
+        <button type="submit" class="btn btn-primary" id="searchBtn" style="grid-column: 1 / -1;">
+            <span id="searchBtnText"><i class="fas fa-search"></i> Buscar</span>
+            <span id="searchBtnLoading" style="display: none;"><i class="fas fa-hourglass-half"></i> Buscando...</span>
+        </button>
+    </form>
+</div>
+
+<div class="card" id="resultsCard" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('parsed')">Resultados Parseados</button>
+            <button class="tab" onclick="switchTab('xml')">XML Crudo</button>
+            <button class="tab" onclick="switchTab('network')">Network</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="copyXML()" id="copyXmlBtn" style="display: none;"><i class="fas fa-clipboard"></i> Copiar XML</button>
+    </div>
+    
+    <div id="parsedTab" class="tab-content active">
+        <div id="parsedResults"></div>
+    </div>
+    
+    <div id="xmlTab" class="tab-content">
+        <pre id="xmlResults"></pre>
+    </div>
+    
+    <div id="networkTab" class="tab-content">
+        <div id="networkResults">
+            <p style="text-align: center; color: var(--text-secondary); padding: 2rem;">Realiza una búsqueda para ver las requests</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    #queryForm {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    
+    .form-group:last-child,
+    #tvFields {
+        grid-column: 1 / -1;
+    }
+    
+    .result-item {
+        background: var(--bg-input);
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    
+    .result-title {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    
+    .result-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+    
+    #xmlResults {
+        background: #1a1d29;
+        padding: 1rem;
+        border-radius: 8px;
+        overflow-x: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+    
+    /* XML Syntax highlighting */
+    .xml-tag { color: #60a5fa; }
+    .xml-special-tag { color: #ef4444; font-weight: 600; } /* rojo para torznab:attr y enclosure */
+    .xml-attr-name { color: #34d399; }
+    .xml-special-attr { color: #fbbf24; font-weight: 500; } /* amarillo para name, value */
+    .xml-attr-value { color: #a78bfa; }
+    .xml-text { color: #e5e7eb; }
+    .xml-comment { color: #6b7280; font-style: italic; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    'use strict';
+    
+    console.log('Query Builder script loading...');
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOMContentLoaded fired');
+        
+        const queryForm = document.getElementById('queryForm');
+        if (!queryForm) {
+            console.error('queryForm not found!');
+            return;
+        }
+        
+        document.getElementById('searchType').addEventListener('change', (e) => {
+            document.getElementById('tvFields').style.display = 
+                e.target.value === 'tvsearch' ? 'grid' : 'none';
+        });
+        
+        document.getElementById('queryForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Form submit intercepted');
+        
+            // Show loading state
+            const searchBtn = document.getElementById('searchBtn');
+            const searchBtnText = document.getElementById('searchBtnText');
+            const searchBtnLoading = document.getElementById('searchBtnLoading');
+            searchBtn.disabled = true;
+            searchBtnText.style.display = 'none';
+            searchBtnLoading.style.display = 'inline';
+            
+            const formData = new FormData(e.target);
+            const indexer = formData.get('indexer');
+            const searchType = formData.get('searchType');
+            formData.delete('indexer');
+            formData.delete('searchType');
+            
+            // Build query string
+            const params = new URLSearchParams();
+            params.set('t', searchType);
+            params.set('apikey', '{{ api_key }}');
+            
+            for (const [key, value] of formData) {
+                if (value) params.set(key, value);
+            }
+            
+            const url = `/api/v1/torznab/${indexer}?${params.toString()}`;
+            
+            // Capture request details for Network tab
+            const requestStart = performance.now();
+            const requestTime = new Date().toISOString().replace('T', ' ').split('.')[0];
+            
+            try {
+                const response = await fetch(url);
+                const requestEnd = performance.now();
+                const duration = Math.round(requestEnd - requestStart);
+                
+                const xmlText = await response.text();
+                
+                // Log request to Network tab
+                logNetworkRequest({
+                    time: requestTime,
+                    method: 'GET',
+                    url: url,
+                    type: 'internal',
+                    indexer: indexer,
+                    status: response.status,
+                    statusText: response.statusText,
+                    duration: duration,
+                    headers: {
+                        request: {
+                            'Accept': 'application/xml, text/xml, */*',
+                            'User-Agent': navigator.userAgent
+                        },
+                        response: Object.fromEntries([...response.headers.entries()])
+                    },
+                    response: xmlText
+                });
+                
+                // Fetch tracker requests from backend
+                console.log('Fetching tracker requests...');
+                setTimeout(() => fetchTrackerRequests(), 1000);
+                
+                // Show results
+                document.getElementById('resultsCard').style.display = 'block';
+                
+                // Display with syntax highlighting
+                document.getElementById('xmlResults').innerHTML = highlightXML(xmlText);
+                
+                // Parse and display
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                const items = xmlDoc.querySelectorAll('item');
+                
+                console.log('XML parsed, items found:', items.length);
+                
+                let html = `<p><strong>${items.length}</strong> resultados encontrados</p>`;
+                
+                items.forEach(item => {
+                    const title = item.querySelector('title')?.textContent || 'Sin título';
+                    // Torznab uses namespace, so we need to escape the colon
+                    const size = item.querySelector('torznab\\:attr[name="size"], attr[name="size"]')?.getAttribute('value') || '0';
+                    const seeders = item.querySelector('torznab\\:attr[name="seeders"], attr[name="seeders"]')?.getAttribute('value') || '0';
+                    const peers = item.querySelector('torznab\\:attr[name="peers"], attr[name="peers"]')?.getAttribute('value') || '0';
+                    const pubDateRaw = item.querySelector('pubDate')?.textContent || '';
+                    
+                    // Parse and format date: from "Wed, 11 Feb 2026 16:25:53 +0000" to "dd/mm/yy hh:mm:ss" in GMT+1
+                    let pubDate = '';
+                    if (pubDateRaw) {
+                        try {
+                            const date = new Date(pubDateRaw);
+                            // Convert to GMT+1 (add 1 hour)
+                            date.setHours(date.getHours() + 1);
+                            const day = String(date.getDate()).padStart(2, '0');
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const year = String(date.getFullYear()).slice(-2);
+                            const hours = String(date.getHours()).padStart(2, '0');
+                            const minutes = String(date.getMinutes()).padStart(2, '0');
+                            const seconds = String(date.getSeconds()).padStart(2, '0');
+                            pubDate = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+                        } catch (e) {
+                            pubDate = pubDateRaw;
+                        }
+                    }
+                    
+                    html += `
+                        <div class="result-item">
+                            <div class="result-title">${escapeHtml(title)}</div>
+                            <div class="result-meta">
+                                <div><i class="fas fa-box"></i> Tamaño: ${formatBytes(parseInt(size))}</div>
+                                <div><i class="fas fa-seedling"></i> Seeds: ${seeders}</div>
+                                <div><i class="fas fa-users"></i> Peers: ${peers}</div>
+                                <div><i class="fas fa-calendar"></i> ${pubDate}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                document.getElementById('parsedResults').innerHTML = html;
+                
+            } catch (error) {
+                alert('Error al realizar la búsqueda: ' + error);
+            } finally {
+                // Reset button state
+                searchBtn.disabled = false;
+                searchBtnText.style.display = 'inline';
+                searchBtnLoading.style.display = 'none';
+            }
+        });
+    }); // End DOMContentLoaded
+})(); // End IIFE
+    
+    // Global variables and functions accessible from HTML onclick attributes
+    let rawXML = '';
+    
+    function switchTab(tab) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        const copyBtn = document.getElementById('copyXmlBtn');
+        
+        if (tab === 'parsed') {
+            document.querySelectorAll('.tab')[0].classList.add('active');
+            document.getElementById('parsedTab').classList.add('active');
+            copyBtn.style.display = 'none';
+        } else if (tab === 'xml') {
+            document.querySelectorAll('.tab')[1].classList.add('active');
+            document.getElementById('xmlTab').classList.add('active');
+            copyBtn.style.display = 'inline-block';
+        } else if (tab === 'network') {
+            document.querySelectorAll('.tab')[2].classList.add('active');
+            document.getElementById('networkTab').classList.add('active');
+            copyBtn.style.display = 'none';
+        }
+    }
+    
+    function copyXML() {
+        const btn = document.getElementById('copyXmlBtn');
+        const originalContent = btn.innerHTML;
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(rawXML).then(() => {
+                showCopiedFeedback(btn, originalContent);
+            }).catch(err => {
+                fallbackCopy(rawXML, btn, originalContent);
+            });
+        } else {
+            fallbackCopy(rawXML, btn, originalContent);
+        }
+    }
+    
+    function showCopiedFeedback(btn, originalContent) {
+        btn.innerHTML = '<i class="fas fa-check"></i> Copiado';
+        btn.style.backgroundColor = '#10b981';
+        setTimeout(() => {
+            btn.innerHTML = originalContent;
+            btn.style.backgroundColor = '';
+        }, 2000);
+    }
+    
+    function fallbackCopy(text, btn, originalContent) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showCopiedFeedback(btn, originalContent);
+        } catch (err) {
+            btn.innerHTML = '<i class="fas fa-times"></i> Error';
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+            }, 2000);
+        }
+        document.body.removeChild(textarea);
+    }
+    
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+    
+    function highlightXML(xml) {
+        rawXML = xml;
+        
+        // Format XML with proper indentation
+        const formatted = formatXML(xml);
+        
+        // Escape HTML first
+        let escaped = formatted
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        
+        // Apply syntax highlighting carefully
+        let result = escaped;
+        
+        // Wrap complete tags with color
+        // Match: <tagname ...> or </tagname> or <tagname/>
+        result = result.replace(/(&lt;)(\/?[a-zA-Z0-9_:-]+)((?:\s[^&]*?)?)(\/?&gt;)/g, function(match, open, tagName, attrs, close) {
+            // Check if it's a special tag (torznab:attr or enclosure)
+            const isSpecial = tagName === 'torznab:attr' || tagName === 'enclosure' || tagName === '/torznab:attr' || tagName === '/enclosure';
+            const tagClass = isSpecial ? 'xml-special-tag' : 'xml-tag';
+            
+            let highlighted = '<span class="' + tagClass + '">' + open + tagName;
+            
+            // Highlight attributes if present
+            if (attrs) {
+                attrs = attrs.replace(/\s([a-zA-Z0-9_:-]+)(=)(&quot;)([^&]*?)(&quot;)/g, function(m, name, eq, q1, val, q2) {
+                    // Check if attribute name is 'name' or 'value' for special highlighting
+                    const isSpecialAttr = (name === 'name' || name === 'value') && isSpecial;
+                    const attrClass = isSpecialAttr ? 'xml-special-attr' : 'xml-attr-name';
+                    
+                    return ' <span class="' + attrClass + '">' + name + '</span>' + 
+                           eq + '<span class="xml-attr-value">' + q1 + val + q2 + '</span>';
+                });
+                highlighted += attrs;
+            }
+            
+            highlighted += close + '</span>';
+            return highlighted;
+        });
+        
+        return result;
+    }
+    
+    function formatXML(xml) {
+        let formatted = '';
+        let indent = 0;
+        const tab = '  ';
+        
+        // Remove extra whitespace and split by tags
+        const tokens = xml.replace(/>\s*</g, '><').split(/(<[^>]+>)/g).filter(t => t.trim());
+        
+        tokens.forEach(token => {
+            if (token.match(/^<\/\w/)) {
+                // Closing tag
+                indent = Math.max(0, indent - 1);
+                formatted += tab.repeat(indent) + token + '\n';
+            } else if (token.match(/^<\w[^>]*[^\/]>$/)) {
+                // Opening tag
+                formatted += tab.repeat(indent) + token + '\n';
+                indent++;
+            } else if (token.match(/^<\w[^>]*\/>$/)) {
+                // Self-closing tag
+                formatted += tab.repeat(indent) + token + '\n';
+            } else if (token.match(/^</)) {
+                // Other tags (XML declaration, comments, etc.)
+                formatted += tab.repeat(indent) + token + '\n';
+            } else if (token.trim()) {
+                // Text content
+                formatted += tab.repeat(indent) + token.trim() + '\n';
+            }
+        });
+        
+        return formatted.trim();
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Network logging
+    let networkRequests = [];
+    let lastFetchTime = 0;
+    
+    function logNetworkRequest(requestData) {
+        // Ensure type is set
+        if (!requestData.type) requestData.type = 'internal';
+        
+        networkRequests.unshift(requestData); // Add to beginning
+        if (networkRequests.length > 100) networkRequests.pop(); // Keep max 100
+        updateNetworkDisplay();
+    }
+    
+    async function fetchTrackerRequests() {
+        try {
+            const response = await fetch('/api/network-logs?limit=50');
+            const data = await response.json();
+            
+            if (data.logs) {
+                // Merge tracker logs with frontend logs
+                // Avoid duplicates by checking timestamp+url
+                const existingKeys = new Set(networkRequests.map(r => `${r.time}-${r.url}`));
+                
+                data.logs.forEach(log => {
+                    const key = `${log.timestamp}-${log.url}`;
+                    if (!existingKeys.has(key) && log.timestamp > lastFetchTime) {
+                        networkRequests.push({
+                            time: log.timestamp,
+                            method: log.method,
+                            url: log.url,
+                            type: log.type,
+                            indexer: log.indexer,
+                            status: log.status,
+                            duration: log.duration,
+                            headers: {
+                                request: log.request_headers || {},
+                                response: log.response_headers || {}
+                            },
+                            request: log.request_body,
+                            response: log.response_body,
+                            error: log.error
+                        });
+                    }
+                });
+                
+                // Sort by time descending
+                networkRequests.sort((a, b) => b.time.localeCompare(a.time));
+                
+                // Keep max 100
+                if (networkRequests.length > 100) {
+                    networkRequests = networkRequests.slice(0, 100);
+                }
+                
+                lastFetchTime = new Date().toISOString().replace('T', ' ').split('.')[0];
+                updateNetworkDisplay();
+            }
+        } catch (error) {
+            console.error('Failed to fetch tracker requests:', error);
+        }
+    }
+    
+    function updateNetworkDisplay() {
+        const container = document.getElementById('networkResults');
+        
+        if (networkRequests.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 2rem;">Realiza una búsqueda para ver las requests</p>';
+            return;
+        }
+        
+        let html = '<div style="font-family: monospace; font-size: 0.875rem;">';
+        html += '<div style="margin-bottom: 1rem; text-align: right;"><button class="btn btn-secondary btn-sm" onclick="clearAllLogs()"><i class="fas fa-trash"></i> Limpiar logs</button></div>';
+        
+        networkRequests.forEach((req, index) => {
+            const statusColor = (req.status && req.status >= 200 && req.status < 300) ? '#10b981' : (req.error ? '#ef4444' : '#fbbf24');
+            const typeColor = req.type === 'tracker' ? '#a78bfa' : '#34d399';
+            const typeBadge = req.type === 'tracker' ? 'Tracker' : 'Internal API';
+            
+            html += `
+                <div style="border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; overflow: hidden;">
+                    <div onclick="toggleRequest(${index})" style="padding: 0.75rem; background: var(--card-bg); cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <span style="color: ${statusColor}; font-weight: 600;">${req.status || (req.error ? 'ERR' : '---')}</span>
+                            <span style="color: #60a5fa; font-weight: 500;">${req.method}</span>
+                            <span style="background: ${typeColor}20; color: ${typeColor}; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">${typeBadge}</span>
+                            ${req.indexer ? `<span style="background: #3b82f620; color: #3b82f6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">${req.indexer}</span>` : ''}
+                            <span style="color: var(--text-secondary); font-size: 0.875rem;">${req.time}</span>
+                            ${req.duration ? `<span style="color: #fbbf24; font-weight: 500;">${req.duration}ms</span>` : ''}
+                        </div>
+                        <i class="fas fa-chevron-down" id="chevron-${index}"></i>
+                    </div>
+                    <div id="request-details-${index}" style="display: none; padding: 1rem; background: #1a1d29;">
+                        <div style="margin-bottom: 1rem;">
+                            <strong style="color: var(--accent);">URL:</strong>
+                            <div style="background: #0f1117; padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem; overflow-x: auto;">
+                                <code style="color: #e5e7eb; word-break: break-all;">${escapeHtml(req.url)}</code>
+                            </div>
+                        </div>
+                        
+                        ${req.error ? `
+                        <div style="margin-bottom: 1rem;">
+                            <strong style="color: #ef4444;">Error:</strong>
+                            <div style="background: #0f1117; padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem;">
+                                <pre style="margin: 0; color: #ef4444;">${escapeHtml(req.error)}</pre>
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <div style="margin-bottom: 1rem;">
+                            <strong style="color: var(--accent);">Request Headers:</strong>
+                            <div style="background: #0f1117; padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem;">
+                                <pre style="margin: 0; color: #e5e7eb; font-size: 0.8rem;">${JSON.stringify(req.headers?.request || {}, null, 2)}</pre>
+                            </div>
+                        </div>
+                        
+                        ${req.request ? `
+                        <div style="margin-bottom: 1rem;">
+                            <strong style="color: var(--accent);">Request Body:</strong>
+                            <div style="background: #0f1117; padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem; max-height: 300px; overflow: auto;">
+                                <pre style="margin: 0; color: #e5e7eb; font-size: 0.8rem;">${escapeHtml(req.request)}</pre>
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <div style="margin-bottom: 1rem;">
+                            <strong style="color: var(--accent);">Response Headers:</strong>
+                            <div style="background: #0f1117; padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem;">
+                                <pre style="margin: 0; color: #e5e7eb; font-size: 0.8rem;">${JSON.stringify(req.headers?.response || {}, null, 2)}</pre>
+                            </div>
+                        </div>
+                        
+                        ${req.response ? `
+                        <div>
+                            <strong style="color: var(--accent);">Response Body:</strong>
+                            <div style="background: #0f1117; padding: 0.5rem; border-radius: 4px; margin-top: 0.25rem; max-height: 400px; overflow: auto;">
+                                <pre style="margin: 0; color: #e5e7eb; font-size: 0.8rem;">${escapeHtml(req.response)}</pre>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        container.innerHTML = html;
+    }
+    
+    async function clearAllLogs() {
+        if (confirm('¿Limpiar todos los logs de network?')) {
+            networkRequests = [];
+            updateNetworkDisplay();
+            
+            // Also clear backend logs
+            try {
+                await fetch('/api/network-logs', { method: 'DELETE' });
+            } catch (error) {
+                console.error('Failed to clear backend logs:', error);
+            }
+        }
+    }
+    
+    function toggleRequest(index) {
+        const details = document.getElementById(`request-details-${index}`);
+        const chevron = document.getElementById(`chevron-${index}`);
+        
+        if (details.style.display === 'none') {
+            details.style.display = 'block';
+            chevron.className = 'fas fa-chevron-up';
+        } else {
+            details.style.display = 'none';
+            chevron.className = 'fas fa-chevron-down';
+        }
+    }
+</script>
+{% endblock %}
